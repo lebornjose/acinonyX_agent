@@ -1,0 +1,25 @@
+{
+  "name": "agent-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent platform with Vue clients, Express API, MySQL and LangChain.",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev:web": "pnpm --filter web-client dev",
+    "dev:admin": "pnpm --filter admin-client dev",
+    "dev:api": "pnpm --filter platform-api dev",
+    "dev:agent": "pnpm --filter agent-service dev",
+    "build": "pnpm -r build",
+    "build:web": "pnpm --filter web-client build",
+    "build:admin": "pnpm --filter admin-client build",
+    "build:upload": "pnpm build && node scripts/upload-static.mjs",
+    "build:release": "node scripts/build-release.mjs",
+    "install:db": "pnpm --filter @agent-platform/database db:generate"
+  },
+  "devDependencies": {
+    "ali-oss": "^6.23.0"
+  }
+}

@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  nickname      String?
+  status        String         @default("active")
+  createdAt     BigInt         @map("created_at") @db.BigInt
+  conversations Conversation[]
+
+  @@map("users")
+}
+
+model Conversation {
+  id        String    @id
+  title     String
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
+  createdAt BigInt    @map("created_at") @db.BigInt
+  updatedAt BigInt    @map("updated_at") @db.BigInt
+
+  @@index([userId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id
+  conversationId String       @map("conversation_id")
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String       @db.Text
+  createdAt      BigInt       @map("created_at") @db.BigInt
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model CustomModel {
+  id        String   @id
+  name      String   @db.VarChar(100)
+  provider  String   @db.VarChar(64)
+  model     String   @map("model_name") @db.VarChar(150)
+  endpoint  String   @db.VarChar(500)
+  apiKey    String   @map("api_key") @db.Text
+  status    String   @default("active") @db.VarChar(32)
+  thinkingMode String @default("disabled") @map("thinking_mode") @db.VarChar(16)
+  createdAt BigInt   @map("created_at") @db.BigInt
+  updatedAt BigInt   @map("updated_at") @db.BigInt
+
+  @@unique([provider, model])
+  @@map("custom_models")
+}

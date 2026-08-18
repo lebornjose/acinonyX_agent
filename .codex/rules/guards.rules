@@ -1,0 +1,27 @@
+# Safety guards for this repository.
+# Database reset, broad deletion, and forceful git operations require approval.
+
+prefix_rule(
+  pattern = ["git", "reset"],
+  decision = "prompt",
+)
+
+prefix_rule(
+  pattern = ["git", "checkout"],
+  decision = "prompt",
+)
+
+prefix_rule(
+  pattern = ["git", "clean"],
+  decision = "prompt",
+)
+
+prefix_rule(
+  pattern = ["pnpm", "prisma", "db", "push"],
+  decision = "prompt",
+)
+
+prefix_rule(
+  pattern = ["pnpm", "prisma", "migrate", "reset"],
+  decision = "prompt",
+)

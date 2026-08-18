@@ -1,0 +1,16 @@
+import { spawn } from "node:child_process";
+
+const services = [
+  ["api", process.execPath, ["apps/api/src/server.js"]],
+  ["agent-service", process.execPath, ["apps/agent-service/src/server.js"]],
+  ["web", "pnpm", ["--filter", "web-client", "dev"]],
+  ["admin", "pnpm", ["--filter", "admin-client", "dev"]]
+];
+const children = services.map(([name, command, args]) => {
+  const child = spawn(command, args, { stdio: "inherit", env: process.env });
+  child.on("exit", (code) => console.log(`[${name}] stopped (${code ?? "signal"})`));
+  return child;
+});
+function shutdown() { children.forEach((child) => child.kill("SIGTERM")); }
+process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
+console.log("平台服务已启动：Web http://localhost:5173，Admin http://localhost:5174，API http://localhost:4001，Agent http://localhost:4002");

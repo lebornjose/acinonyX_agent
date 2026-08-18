@@ -1,0 +1,5 @@
+# Project-level Codex configuration placeholder.
+# Keep runtime and approval settings here once they are agreed for this repository.
+# Do not put API keys, database passwords, or other secrets in this file.
+[features]
+skills = true  # 确保这一行存在并设为 true

@@ -1,0 +1,31 @@
+.thinking-toggle {
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  color: #777;
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.thinking-toggle:hover {
+  background: #f7f7f7;
+  color: #4b6bff;
+}
+
+.thinking-toggle.active {
+  border-color: #cbd5ff;
+  background: #eef1ff;
+  color: #4b6bff;
+}
+
+.thinking-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.thinking-icon {
+  margin-right: 3px;
+  font-size: 13px;
+}

@@ -1,0 +1,24 @@
+.composer-footer {
+  gap: 10px;
+}
+
+.composer-footer span {
+  flex: 1;
+}
+
+.model-select {
+  max-width: 150px;
+  border: 0;
+  background: transparent;
+  color: #666;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  outline: 0;
+  cursor: pointer;
+}
+
+.model-select:disabled {
+  color: #bbb;
+  cursor: not-allowed;
+}
