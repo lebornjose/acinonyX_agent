@@ -1,6 +1,8 @@
-# Multi-Agent Platform
+# 股票知识 Agent
 
-一个基于 Vue 3、Element Plus、Express、MySQL、Prisma、LangChain.js 和 LangGraph 的多 Agent 平台基础架构。
+一个基于 Vue 3、Element Plus、Express、MySQL、Prisma、LangChain.js 和 LangGraph 的股票知识问答 Agent。
+
+它面向希望学习和理解股票市场的用户，支持用中文解答股票基础知识、财务指标、公司基本面、行业研究、估值方法、技术分析、交易规则与投资风险等问题。对于涉及实时行情、个股数据或最新政策的问题，Agent 会提示信息时点和数据核验要求；它不承诺收益，也不替代持牌投资顾问或用户的独立决策。
 
 项目采用 pnpm monorepo 管理多个应用和共享包。
 
@@ -34,10 +36,10 @@ apps/api/src/
 
 ## 服务职责
 
-- `web`：用户聊天、会话展示。
+- `web`：股票知识问答、用户聊天和会话展示。
 - `admin`：用户和会话管理入口。
 - `api`：用户、会话、消息和 Admin API；通过内部接口调用 Agent。
-- `agent-service`：只负责 Agent 编排和 DeepSeek 调用。
+- `agent-service`：只负责股票知识 Agent 的编排、研究与答案生成，以及可配置模型调用。
 - `packages/database/schema.prisma`：MySQL 数据模型。
 
 ## 配置

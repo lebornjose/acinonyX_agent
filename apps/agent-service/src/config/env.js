@@ -41,6 +41,7 @@ export function loadAgentConfig(env = process.env) {
       env.LLM_TIMEOUT_MS,
       60000
     ),
+    tencentTimeoutMs: positiveInteger(env.TENCENT_QUOTE_TIMEOUT_MS, 6000),
     maxRetries: Number.isInteger(
       Number(env.LLM_MAX_RETRIES)
     )
