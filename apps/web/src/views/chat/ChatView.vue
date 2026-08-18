@@ -1,7 +1,7 @@
 <template>
   <div class="chat-app">
     <aside :class="['sidebar', { collapsed: !sidebarOpen }]">
-      <div class="brand"><span class="brand-mark">✦</span><span>加灰狗 Agent</span></div>
+      <div class="brand"><span class="brand-mark">✦</span><span>股票知识 Agent</span></div>
       <button class="new-chat" type="button" @click="newChat"><span>＋</span> 新对话</button>
       <div class="history-title">最近对话</div>
       <div v-if="conversations.length" class="history-list">
@@ -17,16 +17,16 @@
     <main class="workspace">
       <header class="topbar">
         <button class="menu-button" type="button" @click="sidebarOpen = !sidebarOpen">☰</button>
-        <div class="model-picker">加灰狗 Agent <span>⌄</span></div>
+        <div class="model-picker">股票知识 Agent <span>⌄</span></div>
         <button class="top-action" type="button">⋯</button>
       </header>
 
       <section ref="conversationRef" class="conversation">
         <div v-if="!messages.length" class="welcome">
           <div class="welcome-mark">✦</div>
-          <h1>你好，我是加灰狗 Agent</h1>
-          <p>我可以帮你分析行情、研究公司，陪你发现市场中的机会。</p>
-          <div class="suggestions"><button type="button" @click="input = '帮我制定一个学习计划'">帮我制定一个学习计划</button><button type="button" @click="input = '解释一下量子计算'">解释一下量子计算</button></div>
+          <h1>你好，我是股票知识 Agent</h1>
+          <p>我可以帮你学习股票知识、理解财务指标、分析公司和估值方法。</p>
+          <div class="suggestions"><button type="button" @click="input = '市盈率和市净率有什么区别？'">解释市盈率和市净率</button><button type="button" @click="input = '如何系统分析一家上市公司？'">如何分析一家上市公司？</button></div>
         </div>
         <div v-else class="messages">
           <article v-for="(message, index) in messages" :key="index" :class="['message', message.role]">
@@ -40,7 +40,7 @@
       </section>
 
       <form class="composer" @submit.prevent="submit">
-        <textarea v-model="input" :disabled="loading" placeholder="向加灰狗 Agent 发送消息" rows="1" @keydown.enter.exact.prevent="handleEnter"></textarea>
+        <textarea v-model="input" :disabled="loading" placeholder="向股票知识 Agent 提问" rows="1" @keydown.enter.exact.prevent="handleEnter"></textarea>
         <div class="composer-footer">
           <select v-model="selectedModelId" class="model-select" :disabled="loading || !models.length" aria-label="选择模型">
             <option v-for="model in models" :key="model.id" :value="model.id">
