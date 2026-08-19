@@ -32,7 +32,7 @@ export async function streamMessage(req, res, next) {
       fetch(`${process.env.AGENT_SERVICE_URL || "http://localhost:4002"}/internal/agent/stream`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ task: content, context, model, thinkingMode }),
+        body: JSON.stringify({ task: content, conversationId: req.params.id, context, model, thinkingMode }),
         signal: agentController.signal
       })
     ]);

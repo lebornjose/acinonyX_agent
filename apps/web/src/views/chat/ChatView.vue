@@ -88,24 +88,6 @@ const selectedModelId = ref("");
 const thinkingMode = ref("disabled");
 
 const localSessionKey = "jiahui-agent-current-session";
-const maxContextMessages = 12;
-const maxContextCharacters = 12000;
-
-function buildContext(messagesToSend) {
-  const recentMessages = messagesToSend.slice(-maxContextMessages);
-  let totalCharacters = 0;
-  const context = [];
-
-  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
-    const message = recentMessages[index];
-    const content = String(message.content || "");
-    if (totalCharacters + content.length > maxContextCharacters) break;
-    context.unshift({ role: message.role, content });
-    totalCharacters += content.length;
-  }
-
-  return context;
-}
 
 function toggleThinking() {
   thinkingMode.value = thinkingMode.value === "enabled" ? "disabled" : "enabled";
@@ -165,7 +147,6 @@ async function submit() {
     saveLocalSession();
     await scrollToLatest();
     let assistantIndex = -1;
-    const previousMessages = buildContext(messages.value.slice(0, -1));
     await streamMessage(conversationId.value, content, (event, payload) => {
       if (event === "status") { ElMessage.info(`${payload.agent === "researcher" ? "研究" : "写作"} Agent：${payload.status === "running" ? "开始" : "完成"}`); }
       if (event === "token") {
@@ -180,7 +161,7 @@ async function submit() {
       }
       if (event === "message" && assistantIndex >= 0) messages.value[assistantIndex].content = payload.message.content;
       saveLocalSession();
-    }, selectedModelId.value, previousMessages, thinkingMode.value);
+    }, selectedModelId.value, thinkingMode.value);
     await refreshConversations();
   } catch (requestError) {
     error.value = requestError.message;
