@@ -54,16 +54,20 @@ export async function deleteConversation(id) {
 /**
  * Send a message through Server-Sent Events.
  * The callback receives connected, status, token, final and message events.
- * Uses a POST response stream so context is sent in the request body.
+ * Uses a POST response stream so the request is sent as JSON.
+ * History context is managed server-side by LangGraph checkpointer.
+ * @param {string} conversationId Target conversation ID (used as checkpointer thread_id).
  * @param {string} content User message.
  * @param {(event: string, payload: object) => void} onEvent SSE event callback.
- * @returns {Promise<object>} Created conversation after the stream completes.
+ * @param {string} modelId Optional model override ID.
+ * @param {string} thinkingMode Thinking mode: "auto" | "enabled" | "disabled".
+ * @returns {Promise<void>}
  */
-export async function streamMessage(conversationId, content, onEvent, modelId = "", context = [], thinkingMode = "disabled") {
+export async function streamMessage(conversationId, content, onEvent, modelId = "", thinkingMode = "disabled") {
   const response = await fetch(`${API_BASE_URL}/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content, modelId, context, thinkingMode })
+    body: JSON.stringify({ content, modelId, thinkingMode })
   });
 
   if (!response.ok || !response.body) {
