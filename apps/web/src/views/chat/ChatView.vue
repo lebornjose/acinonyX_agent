@@ -31,7 +31,25 @@
         <div v-else class="messages">
           <article v-for="(message, index) in messages" :key="index" :class="['message', message.role]">
             <div class="message-avatar">{{ message.role === "user" ? "我" : "✦" }}</div>
-            <div v-if="message.role === 'assistant'" class="message-content markdown-content" v-html="renderMarkdown(message.content)"></div>
+            <div v-if="message.role === 'assistant'" class="assistant-response">
+              <div class="message-content markdown-content" v-html="renderMarkdown(message.content)"></div>
+              <div
+                v-if="message.suggestedQuestions?.length"
+                class="follow-up-suggestions"
+                aria-label="推荐追问"
+              >
+                <button
+                  v-for="question in message.suggestedQuestions"
+                  :key="question"
+                  type="button"
+                  :disabled="loading"
+                  @click="submitSuggestedQuestion(question)"
+                >
+                  <span>{{ question }}</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </div>
             <div v-else class="message-content">{{ message.content }}</div>
           </article>
           <article v-if="loading" class="message assistant"><div class="message-avatar">✦</div><div class="typing"><i></i><i></i><i></i></div></article>
@@ -160,6 +178,12 @@ async function submit() {
         scrollToLatest();
       }
       if (event === "message" && assistantIndex >= 0) messages.value[assistantIndex].content = payload.message.content;
+      if (event === "suggestions" && assistantIndex >= 0) {
+        messages.value[assistantIndex].suggestedQuestions = Array.isArray(payload.items)
+          ? payload.items
+          : [];
+        scrollToLatest();
+      }
       saveLocalSession();
     }, selectedModelId.value, thinkingMode.value);
     await refreshConversations();
@@ -169,6 +193,15 @@ async function submit() {
   } finally {
     loading.value = false;
   }
+}
+
+function submitSuggestedQuestion(question) {
+  if (loading.value) {
+    return;
+  }
+
+  input.value = question;
+  submit();
 }
 
 function newChat() {

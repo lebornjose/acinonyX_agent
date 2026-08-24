@@ -6,13 +6,14 @@
 
 ## `stock-analysis.tool.js`
 
-A 股行情分析工具，基于 `stock-api` 的腾讯、新浪和东方财富数据源自动兜底。
+A 股行情分析工具，使用同花顺金融数据 API 的标的检索、行情快照、前复权日 K 与估值快照。
 
 ### 输入
 
 ```js
 {
-  task: "分析 SH600519 最近三个月走势"
+  task: "请问复星医药最近三个月走势怎么样？",
+  symbolQuery: "复星医药"
 }
 ```
 
@@ -20,8 +21,9 @@ A 股行情分析工具，基于 `stock-api` 的腾讯、新浪和东方财富�
 
 - `task` 必须是非空字符串。
 - 最大长度为 2000 个字符。
-- 支持 `SH600519`、`SZ000001` 或六位 A 股代码。
-- 也支持传入股票名称，由数据源搜索后选择第一个匹配结果；存在歧义时应要求用户提供代码。
+- 支持 `SH600519`、`SZ000001`、`BJ430047` 或六位 A 股代码。
+- 支持传入股票名称；存在歧义时会列出候选并要求用户提供代码，不会默认选择首条。
+- 正常工作流会先由 `stock_symbol` Agent 从中文问题提取 `symbolQuery`；工具只使用该值进行确定性检索，不负责语义理解。
 
 ### 输出
 
@@ -29,7 +31,7 @@ A 股行情分析工具，基于 `stock-api` 的腾讯、新浪和东方财富�
 
 - 百分比字段使用数值百分比，例如 `5.2` 表示 `5.2%`。
 - `rangePosition` 是 0 到 1 的区间位置。
-- `source` 表示实际返回数据的数据源。
+- `source` 固定为 `hithink-finance`。
 - 新闻、公告和波动原因不在本工具返回范围内，不得由工具或 Agent 猜测。
 
 ### 错误码
@@ -39,38 +41,18 @@ A 股行情分析工具，基于 `stock-api` 的腾讯、新浪和东方财富�
 | `STOCK_INPUT_ERROR` | 输入为空或超过长度限制 |
 | `STOCK_CODE_ERROR` | 无法识别股票代码或名称 |
 | `STOCK_DATA_UNAVAILABLE` | 返回数据为空或历史数据不足 |
-| `STOCK_PROVIDER_ERROR` | 第三方行情数据源调用失败 |
+| `STOCK_PROVIDER_ERROR` | 同花顺金融数据服务调用失败 |
 
 工具对外只抛出可读错误，不透传第三方接口响应、密钥或内部堆栈。
 
 ### 数据限制
 
-该工具使用第三方公开行情接口，数据不保证实时、完整或持续可用。当前使用前复权日线计算趋势，具体复权方式和数据日期必须在回答中说明。
+工具需要 `HITHINK_FINANCE_API_KEY`，并使用前复权日线计算趋势；具体复权方式和数据日期必须在回答中说明。服务端检查响应体的 `code === 0`，不能只依据 HTTP 状态码判断成功。
 
-## `financial-data.tool.js`
+## `hithink-finance.client.js`
 
-腾讯财经实时估值工具，通过 `qt.gtimg.cn` 行情接口获取 PE、PE-TTM、PB 和市值数据。
+同花顺金融数据 REST 客户端。Key 仅由 Agent Service 进程从环境变量读取，并以 `X-api-key` 请求头发给同花顺服务；不会传给浏览器、模型提示词或日志。
 
-### 特点
-
-- **完全免费**，无需注册或 Token。
-- 数据来自腾讯财经实时行情，适用于沪深主板、创业板、科创板和北交所 A 股。
-
-### 配置与约束
-
-- 默认请求超时 6 秒，可通过环境变量 `TENCENT_QUOTE_TIMEOUT_MS` 调整。
-- 工具将 `SH600519` 转为腾讯格式 `sh600519` 后发起请求。
-- 接口超时、返回格式异常或 PE-TTM 为空（如停牌、退市）时，返回 `status: "unavailable"`，不阻断价格与 K 线分析。
-- 市值字段单位为**亿元**，展示前必须标注单位。
-- `sixMonthPeTtmRange` 当前返回 `null`（腾讯实时接口不提供历史估值序列）；如需历史 PE 区间，请接入其他数据源。
-
-### 输出字段
-
-| 字段 | 说明 |
-| --- | --- |
-| `current.pe` | 动态市盈率 |
-| `current.peTtm` | PE-TTM（滚动 12 个月）|
-| `current.pb` | 市净率 PB |
-| `current.totalMarketValue` | 总市值（亿元）|
-| `current.circulatingMarketValue` | 流通市值（亿元）|
-| `sixMonthPeTtmRange` | 暂不支持，始终为 `null` |
+- `HITHINK_FINANCE_API_KEY`：必填。
+- `HITHINK_FINANCE_BASE_URL`：可选，默认 `https://fuyao.aicubes.cn`。
+- `HITHINK_FINANCE_TIMEOUT_MS`：可选，默认 10000 毫秒。

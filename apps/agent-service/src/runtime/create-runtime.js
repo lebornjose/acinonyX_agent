@@ -14,9 +14,9 @@
  *   1. createModel         → LLM 实例
  *   2. loadSkills          → 技能 Map
  *   3. skillText           → 各模块所需的技能文本片段
- *   4. createResearcherAgent / createWriterAgent → Agent 实例（依赖 model 和 skillText）
- *   5. createFinancialDataTool                  → 估值工具（依赖 config）
- *   6. createStockAnalysisTool                  → 行情工具（依赖 financialDataTool）
+ *   4. createResearcherAgent / createWriterAgent / createSuggestionAgent / createStockSymbolAgent → Agent 实例
+ *   5. createHithinkFinanceClient               → 同花顺金融数据客户端
+ *   6. createStockAnalysisTool                  → 行情工具（依赖同花顺客户端）
  *   7. createDefaultGraph                       → 工作流图（依赖所有 Agent 和工具）
  *
  * checkpointer（JsonFileSaver）作为模块级单例在文件顶部初始化，
@@ -26,10 +26,12 @@
 import { createModel } from "../config/model.js";
 import { createResearcherAgent } from "../agents/researcher.agent.js";
 import { createWriterAgent } from "../agents/writer.agent.js";
+import { createSuggestionAgent } from "../agents/suggestion.agent.js";
+import { createStockSymbolAgent } from "../agents/stock-symbol.agent.js";
 import { createDefaultGraph } from "../graphs/default.graph.js";
 import { loadSkills, skillText } from "../skills/load-skills.js";
 import { createStockAnalysisTool, isStockAnalysisTask } from "../tools/stock-analysis.tool.js";
-import { createFinancialDataTool } from "../tools/financial-data.tool.js";
+import { createHithinkFinanceClient } from "../tools/hithink-finance.client.js";
 import { JsonFileSaver } from "../checkpointer/json-file-saver.js";
 
 /**
@@ -53,8 +55,10 @@ const checkpointer = new JsonFileSaver("./data/checkpoints.json");
  *   agents: {
  *     researcher: object,
  *     writer: object,
+ *     suggestionAgent: object,
+ *     stockSymbolAgent: object,
  *     stockTool: object,
- *     financialDataTool: object
+ *     hithinkFinanceClient: object
  *   },
  *   skills: Map<string, string>
  * }>}
@@ -78,27 +82,47 @@ export async function createAgentRuntime(config) {
   // 步骤五：创建写作 Agent（负责生成最终中文回答）
   const writer = createWriterAgent(model, domainSkill, qualitySkill);
 
-  // 步骤六：创建腾讯财经估值工具（获取 PE/PB/市值）
-  const financialDataTool = createFinancialDataTool(config);
+  // 步骤六：创建推荐 Agent（在主回答完成后生成可点击追问）。
+  const suggestionAgent = createSuggestionAgent(model);
 
-  // 步骤七：创建股票行情分析工具（依赖 financialDataTool 补充估值数据）
-  const stockTool = createStockAnalysisTool({ financialDataTool });
+  // 步骤七：创建 A 股标的解析 Agent（从自然语言中抽取唯一标的）。
+  const stockSymbolAgent = createStockSymbolAgent(model);
 
-  // 步骤八：将 isStockAnalysisTask 挂载到工具实例上，
+  // 步骤八：创建同花顺金融数据客户端。
+  const hithinkFinanceClient = createHithinkFinanceClient(config);
+
+  // 步骤九：创建股票行情分析工具（使用同花顺行情、K 线和估值数据）。
+  const stockTool = createStockAnalysisTool({ hithinkFinanceClient });
+
+  // 步骤十：将 isStockAnalysisTask 挂载到工具实例上，
   // 方便 default.graph.js 中的 prepare 节点直接调用，无需单独传参
   stockTool.isStockAnalysisTask = isStockAnalysisTask;
 
-  // 步骤九：注入模块级单例 checkpointer（JsonFileSaver，持久化到磁盘 JSON 文件）
+  // 步骤十一：注入模块级单例 checkpointer（JsonFileSaver，持久化到磁盘 JSON 文件）
   // 使用模块级单例而非每次新建，确保切换模型时不会丢失会话历史。
 
-  // 步骤十：组装并编译 LangGraph 工作流图（传入 checkpointer 启用记忆）
-  const graph = createDefaultGraph({ researcher, writer, stockTool, checkpointer });
+  // 步骤十二：组装并编译 LangGraph 工作流图（传入 checkpointer 启用记忆）
+  const graph = createDefaultGraph({
+    researcher,
+    writer,
+    suggestionAgent,
+    stockTool,
+    stockSymbolAgent,
+    checkpointer
+  });
 
   return {
     // 主要调用入口：graph.invoke() 或 graph.streamEvents()
     graph,
     // 各组件实例（供调试、单测或后续扩展使用）
-    agents: { researcher, writer, stockTool, financialDataTool },
+    agents: {
+      researcher,
+      writer,
+      suggestionAgent,
+      stockSymbolAgent,
+      stockTool,
+      hithinkFinanceClient
+    },
     // 原始技能 Map（供健康检查或管理接口查阅）
     skills
   };

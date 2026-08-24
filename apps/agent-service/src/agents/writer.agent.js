@@ -43,7 +43,7 @@ export function createWriterAgent(model, domainSkill = "", qualitySkill = "") {
      *                                                    结构化行情数据；无行情需求时为 null
      * @returns {Promise<string>} 最终中文回答文本
      */
-    async invoke({ task, research = "", stockAnalysis = null }) {
+    async invoke({ task, research = "", stockAnalysis = null, stockDataNotice = "" }) {
       // 研究简报为空时使用占位符，告知模型直接回答
       const researchBrief = research || "（无额外研究，直接回答）";
 
@@ -51,6 +51,9 @@ export function createWriterAgent(model, domainSkill = "", qualitySkill = "") {
       // 明确告知模型：这是程序计算的数据，必须优先依据，不得补造缺失字段
       const stockBrief = stockAnalysis
         ? `\n\n股票行情数据（由程序获取和计算，优先依据这些数据，不得补造缺失字段）：\n${JSON.stringify(stockAnalysis, null, 2)}`
+        : "";
+      const stockNotice = stockDataNotice
+        ? `\n\n行情数据限制：\n${stockDataNotice}`
         : "";
 
       const messages = [
@@ -66,13 +69,14 @@ export function createWriterAgent(model, domainSkill = "", qualitySkill = "") {
           `5. 综合估值判断。` +
           `数据缺失时明确写"暂无数据"，不得猜测或编造，尤其不得编造 PE。` +
           `行情数据必须标注数据日期和来源；仅凭价格数据不能确定波动原因。` +
+          `若提供“行情数据限制”，须在回答中明确说明该限制，不能把限制外的数据当作已查询事实。` +
           `不要承诺收益，也不要替用户做无依据的买卖决定。` +
           `研究简报为空时直接回答任务；对不确定信息加以标注。` +
           `\n\n${domainSkill}\n\n${qualitySkill}`
         ),
         // 用户消息：将任务、研究简报、行情数据一起传入，请求输出最终答案
         new HumanMessage(
-          `任务：\n${task}\n\n研究简报：\n${researchBrief}${stockBrief}\n\n请输出最终答案。`
+          `任务：\n${task}\n\n研究简报：\n${researchBrief}${stockBrief}${stockNotice}\n\n请输出最终答案。`
         )
       ];
 
