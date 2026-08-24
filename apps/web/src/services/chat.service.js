@@ -53,7 +53,8 @@ export async function deleteConversation(id) {
 
 /**
  * Send a message through Server-Sent Events.
- * The callback receives connected, status, token, final and message events.
+ * The callback receives connected, status, token, final, suggestions and message events.
+ * suggestions is emitted after final with { items: string[] }; done closes the connection.
  * Uses a POST response stream so the request is sent as JSON.
  * History context is managed server-side by LangGraph checkpointer.
  * @param {string} conversationId Target conversation ID (used as checkpointer thread_id).

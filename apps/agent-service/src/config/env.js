@@ -72,7 +72,9 @@ function decimal(value, fallback) {
  *   LLM_TEMPERATURE          - 生成温度，默认 0.2
  *   LLM_TIMEOUT_MS           - 单次请求超时（毫秒），默认 60000
  *   LLM_MAX_RETRIES          - 失败重试次数，默认 1
- *   TENCENT_QUOTE_TIMEOUT_MS - 腾讯行情接口超时（毫秒），默认 6000
+ *   HITHINK_FINANCE_API_KEY   - 同花顺金融数据 API Key（可选）
+ *   HITHINK_FINANCE_BASE_URL  - 同花顺金融数据 API 地址
+ *   HITHINK_FINANCE_TIMEOUT_MS - 同花顺金融数据请求超时（毫秒），默认 10000
  *
  * @param {NodeJS.ProcessEnv} [env=process.env] - 注入的环境变量对象（便于测试）
  * @returns {AgentConfig} 解析后的配置对象
@@ -107,12 +109,14 @@ export function loadAgentConfig(env = process.env) {
     // 单次 LLM 请求的最大等待时间（毫秒）
     timeoutMs: positiveInteger(env.LLM_TIMEOUT_MS, 60000),
 
-    // 腾讯财经行情接口的最大等待时间（毫秒）
-    tencentTimeoutMs: positiveInteger(env.TENCENT_QUOTE_TIMEOUT_MS, 6000),
-
     // LLM 请求失败时的自动重试次数
     maxRetries: Number.isInteger(Number(env.LLM_MAX_RETRIES))
       ? Number(env.LLM_MAX_RETRIES)
-      : 1
+      : 1,
+
+    // 同花顺金融数据配置；Key 缺失时由对应工具返回可读的配置错误。
+    hithinkFinanceApiKey: env.HITHINK_FINANCE_API_KEY || "",
+    hithinkFinanceBaseUrl: env.HITHINK_FINANCE_BASE_URL || "https://fuyao.aicubes.cn",
+    hithinkFinanceTimeoutMs: positiveInteger(env.HITHINK_FINANCE_TIMEOUT_MS, 10000)
   };
 }

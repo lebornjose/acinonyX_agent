@@ -16,11 +16,13 @@
  * SSE 事件类型（/stream 接口）：
  *   token   - 每个生成 token，data: { token: string }
  *   final   - 生成完成汇总，data: { answer, durationMs, firstTokenMs }
+ *   suggestions - 本轮回答完成后生成的推荐追问，data: { items: string[] }
  *   done    - 流结束信号，data: {}
  *   error   - 执行错误，data: { error: string }
  */
 
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { loadAgentConfig } from "./config/env.js";
 import { createAgentRuntime } from "./runtime/create-runtime.js";
 
@@ -75,6 +77,24 @@ function contextFrom(request) {
  */
 const conversationIdFrom = (request) =>
   String(request.body?.conversationId || "").trim() || null;
+
+/**
+ * 为每次图调用生成运行配置。
+ *
+ * JsonFileSaver 要求所有调用均携带 thread_id。客户端未提供会话 ID 时，
+ * 由服务端生成一次性 ID，既不会把临时请求写入同一会话，也不会暴露 ID 给客户端。
+ *
+ * @param {string|null} conversationId - 客户端提供的会话 ID
+ * @returns {{ version: "v2", configurable: { thread_id: string } }} 图运行配置
+ */
+function graphConfig(conversationId) {
+  return {
+    version: "v2",
+    configurable: {
+      thread_id: conversationId || `temporary-${randomUUID()}`
+    }
+  };
+}
 
 /**
  * 将历史上下文与当前问题合并为完整任务文本。
@@ -217,6 +237,7 @@ app.post("/internal/agent/stream", async (req, res) => {
   let firstTokenAt;
   // answer：累积所有 token，用于 final 事件汇总
   let answer = "";
+  let suggestedQuestions = [];
 
   // 局部 sendEvent，绑定当前响应对象
   const send = (event, data) =>
@@ -229,16 +250,16 @@ app.post("/internal/agent/stream", async (req, res) => {
     // streamConfig：传给 streamEvents 的运行时配置
     // 有 conversationId 时绑定 thread_id，checkpointer 自动恢复该会话的历史状态；
     // 无 conversationId 时不传 configurable，图作为无状态单次执行
-    const streamConfig = conversationId
-      ? { version: "v2", configurable: { thread_id: conversationId } }
-      : { version: "v2" };
+    const streamConfig = graphConfig(conversationId);
 
     for await (const event of activeRuntime.graph.streamEvents(
       { task, rawTask },
       streamConfig
     )) {
-      // 只处理 LLM 输出的流式 token 事件
-      if (event.event === "on_chat_model_stream") {
+      const graphNode = event.metadata?.langgraph_node;
+
+      // 只将 writer 的 token 作为正文，避免研究和推荐节点混入回答。
+      if (event.event === "on_chat_model_stream" && graphNode === "writer") {
         const content = event.data?.chunk?.content;
 
         // content 可能是字符串（普通模型）或数组（部分支持思考模式的模型）
@@ -255,6 +276,11 @@ app.post("/internal/agent/stream", async (req, res) => {
           send("token", { token });
         }
       }
+
+      if (event.event === "on_chain_end" && graphNode === "suggestions") {
+        const questions = event.data?.output?.suggestedQuestions;
+        suggestedQuestions = Array.isArray(questions) ? questions : [];
+      }
     }
 
     // 所有 token 推送完毕，发送汇总事件
@@ -264,10 +290,14 @@ app.post("/internal/agent/stream", async (req, res) => {
       firstTokenMs: firstTokenAt ? firstTokenAt - startedAt : null
     });
 
+    if (suggestedQuestions.length) {
+      send("suggestions", { items: suggestedQuestions });
+    }
+
     console.log(
       `[agent] stream completed: durationMs=${Date.now() - startedAt};` +
       ` firstTokenMs=${firstTokenAt ? firstTokenAt - startedAt : "unknown"};` +
-      ` answerCharacters=${answer.length}`
+      ` answerCharacters=${answer.length}; suggestions=${suggestedQuestions.length}`
     );
 
     // 发送流结束信号，然后关闭连接
@@ -301,11 +331,15 @@ app.post("/internal/agent/run", async (req, res) => {
 
   try {
     const activeRuntime = await runtimeFrom(req);
-    const result = await activeRuntime.graph.invoke({ task, rawTask });
+    const result = await activeRuntime.graph.invoke(
+      { task, rawTask },
+      graphConfig(conversationIdFrom(req))
+    );
 
     res.json({
       answer:        result.answer,
       research:      result.research,
+      suggestedQuestions: result.suggestedQuestions,
       needsResearch: result.needsResearch,
       durationMs:    Date.now() - startedAt
     });

@@ -5,8 +5,7 @@
  * 职责：
  *   1. 识别用户问题是否需要实时行情（isStockAnalysisTask）
  *   2. 从问题中提取或搜索股票代码
- *   3. 通过 stock-api（腾讯/新浪/东方财富自动兜底）获取实时行情和日 K 数据
- *   4. 调用 financial_data 工具补充 PE/PB 等估值指标
+ *   3. 通过同花顺金融数据 API 获取实时行情、前复权日 K 和估值数据
  *   5. 计算 1/3/6 个月的价格区间、涨跌幅、波动率等结构化指标，供写作 Agent 使用
  *
  * 设计原则：
@@ -14,7 +13,6 @@
  *   - 数据缺失时返回 null 字段 + limitations 说明，不编造数据
  */
 
-import { stocks } from "stock-api";
 import { z } from "zod";
 
 /**
@@ -22,7 +20,7 @@ import { z } from "zod";
  * 支持带前缀（SH600036 / SZ000001）和纯数字（600036 / 000001）两种格式。
  * 纯数字格式只匹配以沪深板块特征开头的 6 位代码，避免误匹配普通数字。
  */
-const STOCK_CODE_PATTERN = /\b(?:(?:SH|SZ)\d{6}|(?:60|68|00|30|83|87|92)\d{4})\b/i;
+const STOCK_CODE_PATTERN = /\b(?:(?:SH|SZ|BJ)\d{6}|(?:60|68|00|30|83|87|92)\d{4})\b/i;
 
 /**
  * 匹配"需要实时行情"意图的关键词正则。
@@ -39,7 +37,8 @@ const MAX_TASK_LENGTH = 2000;
  * task 不能为空，且长度不能超过 MAX_TASK_LENGTH。
  */
 const STOCK_TASK_SCHEMA = z.object({
-  task: z.string().trim().min(1).max(MAX_TASK_LENGTH)
+  task: z.string().trim().min(1).max(MAX_TASK_LENGTH),
+  symbolQuery: z.string().trim().min(1).max(64).optional()
 });
 
 /**
@@ -100,24 +99,24 @@ export function isStockAnalysisTask(task) {
 function normalizeStockCode(code) {
   const normalized = String(code || "").trim().toUpperCase();
 
-  // 已有完整前缀，直接返回
-  if (/^(SH|SZ)\d{6}$/u.test(normalized)) {
-    return normalized;
+  const prefixedCode = normalized.match(/^(SH|SZ|BJ)(\d{6})$/u);
+  if (prefixedCode) {
+    return `${prefixedCode[2]}.${prefixedCode[1]}`;
   }
 
   // 上交所：主板（60xxxx）和科创板（68xxxx）
   if (/^(60|68)\d{4}$/u.test(normalized)) {
-    return `SH${normalized}`;
+    return `${normalized}.SH`;
   }
 
   // 深交所：主板（00xxxx）和创业板（30xxxx）
   if (/^(00|30)\d{4}$/u.test(normalized)) {
-    return `SZ${normalized}`;
+    return `${normalized}.SZ`;
   }
 
   // 北交所：83/87/92 开头
   if (/^(83|87|92)\d{4}$/u.test(normalized)) {
-    return `BJ${normalized}`;
+    return `${normalized}.BJ`;
   }
 
   return "";
@@ -132,7 +131,7 @@ function normalizeStockCode(code) {
  */
 function extractStockCode(task) {
   // 优先匹配带前缀的代码（更精确）
-  const prefixedCode = String(task || "").match(/\b(?:SH|SZ)\d{6}\b/i)?.[0];
+  const prefixedCode = String(task || "").match(/\b(?:SH|SZ|BJ)\d{6}\b/i)?.[0];
   if (prefixedCode) {
     return normalizeStockCode(prefixedCode);
   }
@@ -266,10 +265,71 @@ function findLargeMovements(klines) {
     .slice(-10);        // 只保留最近 10 条
 }
 
+function formatShanghaiDate(timestamp) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp));
+  const valueByType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${valueByType.year}-${valueByType.month}-${valueByType.day}`;
+}
+
+function normalizeKlines(items) {
+  return items
+    .map((item) => ({
+      date: formatShanghaiDate(item.date_ms),
+      close: item.close_price
+    }))
+    .filter((item) => Number.isFinite(Number(item.close)))
+    .sort((first, second) => first.date.localeCompare(second.date));
+}
+
+function buildValuation(valuation) {
+  const item = valuation.item;
+  if (!item) {
+    return {
+      status: "unavailable",
+      reason: "同花顺金融数据未返回该股票的估值指标。",
+      current: null,
+      sixMonthPeTtmRange: null
+    };
+  }
+
+  return {
+    status: "available",
+    source: "hithink-finance",
+    dataAsOf: valuation.timestamp ? formatShanghaiDate(valuation.timestamp) : null,
+    current: {
+      pe: Number.isFinite(item.pe_mrq) ? item.pe_mrq : null,
+      peTtm: Number.isFinite(item.pe_ttm) ? item.pe_ttm : null,
+      pb: Number.isFinite(item.pb_mrq) ? item.pb_mrq : null,
+      totalMarketValue: null,
+      circulatingMarketValue: null
+    },
+    sixMonthPeTtmRange: null
+  };
+}
+
+function buildStockSnapshot(symbol, snapshot) {
+  return {
+    code: symbol.thscode,
+    name: symbol.name,
+    source: "hithink-finance",
+    now: snapshot.last_price,
+    percent: Number(snapshot.price_change_ratio_pct) / 100,
+    high: snapshot.high_price,
+    low: snapshot.low_price,
+    yesterday: snapshot.prev_price
+  };
+}
+
 /**
  * 将实时行情、K 线数据和估值指标整合为结构化分析对象。
  *
- * @param {object} stock      - stock-api 返回的实时行情对象
+ * @param {object} stock      - 标准化后的同花顺行情快照
  * @param {Array}  klines     - 日 K 数据数组
  * @param {object} valuation  - financial_data 工具返回的估值指标
  * @returns {object} 结构化分析结果，供写作 Agent 使用
@@ -306,7 +366,6 @@ function buildAnalysis(stock, klines, valuation) {
 /**
  * 创建 A 股行情分析工具实例。
  *
- * stock-api 内部会按 腾讯 → 新浪 → 东方财富 顺序自动兜底，
  * 本工具只负责取数和确定性计算，不让大模型自行计算价格区间和波动率。
  *
  * 输入约束：task 必须是 1-2000 个字符的字符串。
@@ -316,7 +375,7 @@ function buildAnalysis(stock, klines, valuation) {
  * @param {object} options.financialDataTool    - financial_data 工具实例（用于获取 PE/PB）
  * @returns {{ name: string, invoke: Function, isStockAnalysisTask: Function }} 工具对象
  */
-export function createStockAnalysisTool({ financialDataTool }) {
+export function createStockAnalysisTool({ hithinkFinanceClient }) {
   return {
     name: "stock_analysis",
 
@@ -325,8 +384,8 @@ export function createStockAnalysisTool({ financialDataTool }) {
      *
      * 流程：
      *   1. 校验 task 参数
-     *   2. 从 task 中提取股票代码；若无代码则用关键词搜索
-     *   3. 并行获取实时行情、日 K 数据、估值指标
+     *   2. 从 task 中提取股票代码；若无代码则用名称搜索并消歧
+     *   3. 并行获取实时行情、前复权日 K 数据、估值指标
      *   4. 校验数据有效性，返回结构化分析结果
      *
      * @param {object} params      - 调用参数
@@ -334,45 +393,45 @@ export function createStockAnalysisTool({ financialDataTool }) {
      * @returns {Promise<object>}  结构化行情分析对象
      * @throws {StockToolError}    输入无效、代码无法识别、数据源不可用时抛出
      */
-    async invoke({ task }) {
+    async invoke({ task, symbolQuery }) {
       // 参数校验：空字符串或超长输入直接拒绝
-      const parsed = STOCK_TASK_SCHEMA.safeParse({ task });
+      const parsed = STOCK_TASK_SCHEMA.safeParse({ task, symbolQuery });
       if (!parsed.success) {
         throw new StockToolError("股票分析问题不能为空，且长度不能超过 2000 个字符。", "STOCK_INPUT_ERROR");
       }
 
       try {
-        // 步骤一：尝试直接从问题中提取股票代码
+        // 步骤一：尝试直接从问题中提取股票代码。
         const directCode = extractStockCode(parsed.data.task);
+        const keyword = parsed.data.symbolQuery || searchKeyword(parsed.data.task);
+        const resolvedQuery = directCode || keyword;
 
-        // 步骤二：若没有直接代码，提取关键词用于名称搜索
-        const keyword = searchKeyword(parsed.data.task);
-
-        // 步骤三：有直接代码则跳过搜索；否则通过关键词搜索股票列表
-        const searchResults = directCode || !keyword
-          ? []
-          : await stocks.auto.searchStocks(keyword);
-
-        // 步骤四：确定最终使用的股票代码
-        const code = directCode || normalizeStockCode(searchResults[0]?.code);
-        if (!code) {
+        if (!resolvedQuery) {
           throw new StockToolError("未能识别 A 股代码，请提供股票名称或 6 位股票代码。", "STOCK_CODE_ERROR");
         }
 
-        // 步骤五：并行获取三类数据，减少总等待时间
-        const [stock, klines, valuation] = await Promise.all([
-          stocks.auto.getStock(code),                                              // 实时行情
-          stocks.auto.getKlines(code, { period: "day", count: 140, adjust: "qfq" }), // 前复权日 K（约 6 个月 + 冗余）
-          financialDataTool.invoke({ code })                                        // PE/PB 估值指标
-        ]);
+        // 步骤二：始终通过同花顺标的检索取得标准代码与名称。
+        const symbol = await hithinkFinanceClient.resolveAshare(resolvedQuery);
+        const end = Date.now();
+        const start = end - (240 * 24 * 60 * 60 * 1000);
 
-        // 步骤六：校验数据完整性
+        // 步骤三：并行获取三类数据，减少总等待时间。
+        const [snapshot, rawKlines, rawValuation] = await Promise.all([
+          hithinkFinanceClient.getSnapshot(symbol.thscode),
+          hithinkFinanceClient.getHistoricalPrices(symbol.thscode, start, end),
+          hithinkFinanceClient.getValuation(symbol.thscode)
+        ]);
+        const klines = normalizeKlines(rawKlines);
+        const stock = snapshot ? buildStockSnapshot(symbol, snapshot) : null;
+        const valuation = buildValuation(rawValuation);
+
+        // 步骤四：校验数据完整性。
         // stock.now 为 0 或无效说明行情未返回；klines < 21 则连 1 个月指标都无法计算
         if (!stock || !Number(stock.now) || klines.length < 21) {
-          throw new StockToolError(`暂时无法获取 ${code} 的有效行情数据，请稍后重试。`, "STOCK_DATA_UNAVAILABLE");
+          throw new StockToolError(`暂时无法获取 ${symbol.thscode} 的有效行情数据，请稍后重试。`, "STOCK_DATA_UNAVAILABLE");
         }
 
-        // 步骤七：整合数据，返回结构化分析结果
+        // 步骤五：整合数据，返回结构化分析结果。
         return buildAnalysis(stock, klines, valuation);
       } catch (error) {
         // StockToolError 直接向上传递，保留原始错误类型和 code
@@ -380,8 +439,12 @@ export function createStockAnalysisTool({ financialDataTool }) {
           throw error;
         }
 
+        if (String(error.code || "").startsWith("HITHINK_")) {
+          throw new StockToolError(error.message, error.code);
+        }
+
         // 其他未预期错误（网络异常、第三方库错误等）统一包装后抛出
-        throw new StockToolError("行情数据源暂时不可用，请稍后重试。", "STOCK_PROVIDER_ERROR");
+        throw new StockToolError("同花顺金融数据源暂时不可用，请稍后重试。", "STOCK_PROVIDER_ERROR");
       }
     }
   };
